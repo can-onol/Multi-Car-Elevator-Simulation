@@ -6,7 +6,7 @@ UP = 0
 DN = 1
 DIR = ("UP","DN")
 numShaft=4
-numCar=3
+numCar=1
 positions = np.zeros((numCar, numShaft))
 
 @dataclass

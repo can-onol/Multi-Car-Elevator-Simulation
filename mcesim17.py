@@ -295,12 +295,14 @@ class psng(simulation):
         self.arr = arr  # current floor of the passenger
         self.dest = dest # destination floor of the passenger
         self.carrier = None # the elevator car the passenger will get on
+        #self.A = np.zeros((self.s.top,2))
         if arr < dest:
             self.dir = UP
         else:
             self.dir = DN
         self.t_arr = self.s.now
         self.state = 'arrived'
+        self.wt = 0
 
     def __repr__(self):
         if self.carrier:
@@ -313,7 +315,9 @@ class psng(simulation):
         self.s.nn = self.s.nn + 1       # ??
         self.carrier = c
         self.s.bldg[self.arr].append(self) # [ [], [], [psng1, psng2, ... (add passenger to current_floor)], ...,[]]
-        c.calls[self.arr,self.dir] = 1
+        c.calls[self.arr,self.dir] = 1  # psng's arrived floor. It's different from other call matrices
+
+        print(c.calls_wt)
         ''' [up down]
             [1  0   ]  arrived passenger 
             [0  0   ]
@@ -343,11 +347,11 @@ class psng(simulation):
             xprint("%6.1f wtx=%6.1f" % (self.s.now,self.wtx),self.s.dbg)
 
     def board(self):
-        self.carrier.board(self)
         self.t_board = self.s.now
-        wt = self.t_board-self.t_arr
+        wt = self.t_board - self.t_arr
         self.wt = wt
-        xprint("%6.1f %s" % (self.s.now,self),self.s.dbg) # print to console when boarded
+        self.carrier.board(self)
+        xprint("wt=%6.1f %6.1f %s" % (self.wt,self.s.now,self),self.s.dbg) # print to console when boarded
         if self.s.trn and self.state != 'boarded':
             self.rec.flush(wt)
         self.state = 'boarded'
@@ -363,7 +367,7 @@ class psng(simulation):
         self.s.st = self.s.st + st
         self.s.nt = self.s.nt + 1
         self.s.psgs.append(self)
-        xprint("%6.1f %s" % (self.s.now,self),self.s.dbg)
+        xprint("ASD %6.1f %s" % (self.s.now,self),self.s.dbg)
 
 
 UP = 0
@@ -401,6 +405,7 @@ class cage(simulation):
         self.blocks_at = -1     # The floor of next blocking cage.
         self.boarded = []       # List of passengers who have boarded.
         self.calls = np.zeros((self.s.top,2)) # 2 here is the directions for UP and DN, the destination floors of the passengers are stored
+        self.calls_wt = np.zeros((self.s.top, 2))
         # List of floors (up and down separately) Write a 1 at the location where a call is made from
 
     def init_gpos(self):
@@ -408,7 +413,7 @@ class cage(simulation):
 
 
     def __repr__(self): # Produce string representing car information.
-        return f"cage(id:{self.id}, pos:{self.pos}, dir:{DIR[self.shaft.dir]}, st:{self.state}, shaftID:{self.shaft.id}, callRequests:{self.calls})"
+        return f"cage(id:{self.id}, pos:{self.pos}, dir:{DIR[self.shaft.dir]}, st:{self.state}, shaftID:{self.shaft.id}, callRequests:{self.calls}, callWt:{self.calls_wt})"
 
 
     def board(self,p): #board the passenger p
@@ -416,6 +421,7 @@ class cage(simulation):
         if p in self.s.bldg[p.arr]:
             self.s.bldg[p.arr].remove(p) # Remove passenger from waiting floor.
         self.calls[p.dest,self.shaft.dir] = 1 # Add destination to the call list of this car.
+        self.calls_wt[p.arr,self.shaft.dir] = p.wt
 
     def leave(self,p): # deboard the passenger p
         self.boarded.remove(p)
@@ -698,8 +704,8 @@ if __name__ == "__main__":
         exec("from "+alg+" import algorithm")
 
     exec("from "+rec+" import record")
-
-    sim = simulator(top,nshaft,ncar,1,end,dbg,trc,wtp,wts,dmp,sta,pre,dly,cap,trnf)
+    seed=2
+    sim = simulator(top,nshaft,ncar,seed,end,dbg,trc,wtp,wts,dmp,sta,pre,dly,cap,trnf)
     sim.algorithm = algorithm
     t1=traffic(sim,rate)
     cl=clock(sim,1)
