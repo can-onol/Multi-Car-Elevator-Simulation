@@ -68,7 +68,9 @@ pre = False
 sta = False
 anim = False
 
-
+UP = 0
+DN = 1
+DIR = ("UP","DN")
 
 def xprint(s,x):
     if x:
@@ -110,6 +112,7 @@ class simulator:
         self.sys = [] # TODO system components of the simulator? shafts, elevator cars, passengers? *******************
         self.now = 0
         self.wt = 0
+        self.wtc = 0
         self.st = 0
         self.nt = 0
         self.nn = 0
@@ -134,6 +137,12 @@ class simulator:
         self.leftover = 0
         self.trn = None
         self.trnf = None
+        self.carCall = np.zeros((self.top, self.nshafts))
+        self.extended_hallCall = np.zeros((self.top, self.nshafts))
+        self.hallCall = np.zeros((self.top, 2))
+        self.hallCall_wt = np.zeros((self.top, 2))
+
+
         if trnf:
             self.trnf = open(trnf,"w") # TODO "open" function to write to the file trnf *************************
             self.trn = True
@@ -147,6 +156,7 @@ class simulator:
         #print("W=%d H=%d" % (self.width,self.height))
         self.bldg = [[] for i in range(self.top)] # TODO building floors? ******************** [[],[],[], ..., []]
         self.shafts = [shaft(self,i,ncars) for i in range(nshafts)] # create a shaft list ****************
+
         n = int(top/math.sqrt(ncars))
         self.zones = [n,]		# assignment floor zones for each car in shaft
         for i in range(1,ncars):
@@ -209,6 +219,16 @@ class simulator:
                     return px.wt
             self.run()
 
+    def calculate_extended_matrix(self):
+        for i in range(self.nshafts):
+            if self.shafts[i].dir == UP:
+                self.extended_hallCall[:, i] = self.hallCall_wt[:, 0]
+            elif self.shafts[i].dir == DN:
+                self.extended_hallCall[:, i] = self.hallCall_wt[:, 1]
+            else:
+                print("TODO")
+
+        return self.extended_hallCall
 
 class clock(simulation):
     """
@@ -295,14 +315,12 @@ class psng(simulation):
         self.arr = arr  # current floor of the passenger
         self.dest = dest # destination floor of the passenger
         self.carrier = None # the elevator car the passenger will get on
-        #self.A = np.zeros((self.s.top,2))
         if arr < dest:
             self.dir = UP
         else:
             self.dir = DN
         self.t_arr = self.s.now
         self.state = 'arrived'
-        self.wt = 0
 
     def __repr__(self):
         if self.carrier:
@@ -314,10 +332,11 @@ class psng(simulation):
     def assign(self,c):
         self.s.nn = self.s.nn + 1       # ??
         self.carrier = c
+        #### modificiation
+        self.s.hallCall[self.arr, self.carrier.shaft.dir] = 1
+        #### modification end
         self.s.bldg[self.arr].append(self) # [ [], [], [psng1, psng2, ... (add passenger to current_floor)], ...,[]]
         c.calls[self.arr,self.dir] = 1  # psng's arrived floor. It's different from other call matrices
-
-        print(c.calls_wt)
         ''' [up down]
             [1  0   ]  arrived passenger 
             [0  0   ]
@@ -350,6 +369,9 @@ class psng(simulation):
         self.t_board = self.s.now
         wt = self.t_board - self.t_arr
         self.wt = wt
+        #### modification
+        self.s.hallCall_wt[self.arr, self.carrier.shaft.dir] = self.wt
+        #### modification end
         self.carrier.board(self)
         xprint("wt=%6.1f %6.1f %s" % (self.wt,self.s.now,self),self.s.dbg) # print to console when boarded
         if self.s.trn and self.state != 'boarded':
@@ -357,22 +379,20 @@ class psng(simulation):
         self.state = 'boarded'
 
     def leave(self):
-        self.carrier.leave(self)
         self.t_leave = self.s.now
         st = self.t_leave-self.t_arr
+        wtc = self.t_leave-self.t_board
+        self.wtc = wtc
+        self.carrier.leave(self)
         self.state = 'finished'
         xprint("%6.1f PSG %6.1f %6.1f" % (self.s.now,self.wt,st),self.s.wtp) # print to console when arrived to destination
         self.st = st
         self.s.wt = self.s.wt + self.wt
-        self.s.st = self.s.st + st
+        self.s.wtc = self.s.wtc + self.wtc
+        self.s.st = self.s.st + self.st
         self.s.nt = self.s.nt + 1
         self.s.psgs.append(self)
         xprint("ASD %6.1f %s" % (self.s.now,self),self.s.dbg)
-
-
-UP = 0
-DN = 1
-DIR = ("UP","DN")
 
 class cage(simulation):
     """
@@ -405,7 +425,7 @@ class cage(simulation):
         self.blocks_at = -1     # The floor of next blocking cage.
         self.boarded = []       # List of passengers who have boarded.
         self.calls = np.zeros((self.s.top,2)) # 2 here is the directions for UP and DN, the destination floors of the passengers are stored
-        self.calls_wt = np.zeros((self.s.top, 2))
+        # self.calls_wt = np.zeros((self.s.top, 2))
         # List of floors (up and down separately) Write a 1 at the location where a call is made from
 
     def init_gpos(self):
@@ -413,7 +433,11 @@ class cage(simulation):
 
 
     def __repr__(self): # Produce string representing car information.
-        return f"cage(id:{self.id}, pos:{self.pos}, dir:{DIR[self.shaft.dir]}, st:{self.state}, shaftID:{self.shaft.id}, callRequests:{self.calls}, callWt:{self.calls_wt})"
+        return f"cage(id:{self.id}, pos:{self.pos}, dir:{DIR[self.shaft.dir]}, st:{self.state}, shaftID:{self.shaft.id}, " \
+               f"\ncallRequests:{self.calls}, " \
+               f"\nwth:{self.s.hallCall_wt}, " \
+               f"\nwtc:{self.s.carCall})," \
+               f"\nwtB:{self.s.calculate_extended_matrix()})"
 
 
     def board(self,p): #board the passenger p
@@ -421,11 +445,12 @@ class cage(simulation):
         if p in self.s.bldg[p.arr]:
             self.s.bldg[p.arr].remove(p) # Remove passenger from waiting floor.
         self.calls[p.dest,self.shaft.dir] = 1 # Add destination to the call list of this car.
-        self.calls_wt[p.arr,self.shaft.dir] = p.wt
+        # self.calls_wt[p.arr,self.shaft.dir] = p.wt
 
     def leave(self,p): # deboard the passenger p
         self.boarded.remove(p)
         self.calls[p.dest,self.shaft.dir] = 0
+        self.s.carCall[p.dest, self.shaft.id] = p.wtc
 
     def event(self):
 
@@ -704,7 +729,7 @@ if __name__ == "__main__":
         exec("from "+alg+" import algorithm")
 
     exec("from "+rec+" import record")
-    seed=2
+    seed=1
     sim = simulator(top,nshaft,ncar,seed,end,dbg,trc,wtp,wts,dmp,sta,pre,dly,cap,trnf)
     sim.algorithm = algorithm
     t1=traffic(sim,rate)

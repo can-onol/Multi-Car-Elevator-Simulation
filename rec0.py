@@ -18,6 +18,7 @@ class record:
         self.nshaft = s.nshafts
         self.ncars = s.ncars
         self.b = 0
+        self.wtc = s.calls
 
         self.v = np.zeros((3,self.n),int)
         self.sh = np.zeros(self.nshaft)
