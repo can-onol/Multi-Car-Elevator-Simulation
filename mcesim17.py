@@ -141,6 +141,7 @@ class simulator:
         self.extended_hallCall = np.zeros((self.top, self.nshafts))
         self.hallCall = np.zeros((self.top, 2))
         self.hallCall_wt = np.zeros((self.top, 2))
+        self.psgInfo = [[] for i in range(self.top)]
 
 
         if trnf:
@@ -364,6 +365,16 @@ class psng(simulation):
             self.wtx=wtx
             random.setstate(saved)
             xprint("%6.1f wtx=%6.1f" % (self.s.now,self.wtx),self.s.dbg)
+
+    def getPsgInfo(self):
+        if self.state == 'arrived':
+            return self.state, self.id, self.arr, self.dest, self.t_arr, self.dir
+        elif self.state == 'assigned':
+            return self.state, self.id, self.arr, self.dest, self.t_arr, self.dir, self.t_board, self.carrier
+        elif self.state == 'arrived':
+            return self.state, self.id, self.arr, self.dest, self.t_arr, self.dir, self.t_board, self.carrier
+        elif self.state == 'finished':
+            return self.state, self.id, self.arr, self.dest, self.t_arr, self.dir, self.t_board, self.carrier, self.t_leave
 
     def board(self):
         self.t_board = self.s.now
