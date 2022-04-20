@@ -459,7 +459,7 @@ class cage(simulation):
         self.s.carCall[p.dest, self.shaft.id] = p.wtc
 
     def getPsgInfo(self,p):
-        return 'state:',p.state,'id:',p.id,'arr:',p.arr,'dest:',p.dest,'t_arr:',p.t_arr,'dir:',p.dir,'t_board:',p.t_board,'car:',self.id,'t_leave:',p.t_leave
+        return 'state:',p.state,'id:',p.id,'arr:',p.arr,'dest:',p.dest,'t_arr:',p.t_arr,'dir:',p.dir,'t_board:',p.t_board,'car:',self.id,'shaft:',self.shaft.id,'t_leave:',p.t_leave
         # if p.state == 'arrived':
         #     return p.state, p.id, p.arr, p.dest, p.t_arr
         # elif p.state == 'assigned':
@@ -517,7 +517,7 @@ class cage(simulation):
                 # A passenger is boarding
                 if p.carrier == self and p.dir == self.shaft.dir: # if the floor of the passenger (that are assigned to this car) and car is the same and their direction is the same
                     if len(self.boarded) < self.cap: # if there are still capacity
-                        # print(self.getPsgInfo(p))
+                        print(self.getPsgInfo(p))
                         p.board()
                         print(self.getPsgInfo(p))
                         self.next('board',self.t_board)
