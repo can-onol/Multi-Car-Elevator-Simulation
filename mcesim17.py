@@ -142,6 +142,7 @@ class simulator:
         self.hallCall = np.zeros((self.top, 2))
         self.hallCall_wt = np.zeros((self.top, 2))
         self.psgInfo = [[] for i in range(self.top)]
+        self.psgArr = [[] for i in range(self.top)]
 
 
         if trnf:
@@ -322,6 +323,10 @@ class psng(simulation):
             self.dir = DN
         self.t_arr = self.s.now
         self.state = 'arrived'
+        # self.state = None
+        self.t_board = 0
+        self.t_leave = 0
+        self.s.psgArr[self.arr].append(self)
 
     def __repr__(self):
         if self.carrier:
@@ -365,16 +370,6 @@ class psng(simulation):
             self.wtx=wtx
             random.setstate(saved)
             xprint("%6.1f wtx=%6.1f" % (self.s.now,self.wtx),self.s.dbg)
-
-    def getPsgInfo(self):
-        if self.state == 'arrived':
-            return self.state, self.id, self.arr, self.dest, self.t_arr, self.dir
-        elif self.state == 'assigned':
-            return self.state, self.id, self.arr, self.dest, self.t_arr, self.dir, self.t_board, self.carrier
-        elif self.state == 'arrived':
-            return self.state, self.id, self.arr, self.dest, self.t_arr, self.dir, self.t_board, self.carrier
-        elif self.state == 'finished':
-            return self.state, self.id, self.arr, self.dest, self.t_arr, self.dir, self.t_board, self.carrier, self.t_leave
 
     def board(self):
         self.t_board = self.s.now
@@ -463,6 +458,17 @@ class cage(simulation):
         self.calls[p.dest,self.shaft.dir] = 0
         self.s.carCall[p.dest, self.shaft.id] = p.wtc
 
+    def getPsgInfo(self,p):
+        return 'state:',p.state,'id:',p.id,'arr:',p.arr,'dest:',p.dest,'t_arr:',p.t_arr,'dir:',p.dir,'t_board:',p.t_board,'car:',self.id,'t_leave:',p.t_leave
+        # if p.state == 'arrived':
+        #     return p.state, p.id, p.arr, p.dest, p.t_arr
+        # elif p.state == 'assigned':
+        #     return p.state, p.id, p.arr, p.dest, p.t_arr, p.dir, p.carrier
+        # elif p.state == 'arrived':
+        #     return p.state, p.id, p.arr, p.dest, p.t_arr, p.dir, p.t_board, p.carrier, p.t_leave
+        # elif p.state == 'finished':
+        #     return p.state, p.id, p.arr, p.dest, p.t_arr, p.dir, p.t_board, p.carrier, p.t_leave
+
     def event(self):
 
         """
@@ -479,6 +485,8 @@ class cage(simulation):
                 self.next('open',self.t_open)
             elif self.called() != -1:
                 # Passengers arrived somewhere else
+                for p in self.s.psgArr[self.pos]:
+                    print(self.getPsgInfo(p))
                 self.next('close',self.t_run)
             else:
                 # Nothing to do
@@ -499,7 +507,9 @@ class cage(simulation):
             for p in self.boarded: # Disembark passengers for this floor.
                 # A passenger is leaving
                 if p.dest == self.pos:
+                    # print(self.getPsgInfo(p))
                     p.leave()
+                    print(self.getPsgInfo(p))
                     self.next('open',self.t_leave)
         elif self.state == 'board':
             self.next('close',self.t_close)
@@ -507,7 +517,9 @@ class cage(simulation):
                 # A passenger is boarding
                 if p.carrier == self and p.dir == self.shaft.dir: # if the floor of the passenger (that are assigned to this car) and car is the same and their direction is the same
                     if len(self.boarded) < self.cap: # if there are still capacity
+                        # print(self.getPsgInfo(p))
                         p.board()
+                        print(self.getPsgInfo(p))
                         self.next('board',self.t_board)
                     else:
                         self.s.leftover = self.s.leftover+1     #TODO: Perhaps better to restore this passenger back to the pool?
