@@ -43,7 +43,7 @@ def nn_assign(sim,s,p):
             if x <= sim.zones[i]:
                 break
         c = s.cars[i]
-        # xprint("%6.1f assign (%d,%d) to %d" % (s.ncars,p.arr,p.dest,c.id),dbg)
+        xprint("%6.1f assign (%d,%d) to %d" % (s.ncars,p.arr,p.dest,c.id),dbg)
         return c
 
 def nn_algorithm(simulation,p):
@@ -59,7 +59,7 @@ def nn_algorithm(simulation,p):
     return cmin
 
 
-dbg = True
+dbg = False
 trc = False
 wtp = True
 wts = True
@@ -141,9 +141,7 @@ class simulator:
         self.extended_hallCall = np.zeros((self.top, self.nshafts))
         self.hallCall = np.zeros((self.top, 2))
         self.hallCall_wt = np.zeros((self.top, 2))
-        self.psgInfo = [[] for i in range(self.top)]
-        self.psgArr = [[] for i in range(self.top)]
-
+        self.B = np.zeros((self.top,2))
 
         if trnf:
             self.trnf = open(trnf,"w") # TODO "open" function to write to the file trnf *************************
@@ -231,6 +229,15 @@ class simulator:
                 print("TODO")
 
         return self.extended_hallCall
+
+    def updateMatrixB(self,p):
+        for i in range(self.top):
+            if p in self.bldg[i]:
+                self.B[p.arr, p.dir] = p.wt
+            else:
+                self.B[i,:] = 0
+        return print(self.B)
+
 
 class clock(simulation):
     """
@@ -323,10 +330,8 @@ class psng(simulation):
             self.dir = DN
         self.t_arr = self.s.now
         self.state = 'arrived'
-        # self.state = None
         self.t_board = 0
         self.t_leave = 0
-        self.s.psgArr[self.arr].append(self)
 
     def __repr__(self):
         if self.carrier:
@@ -369,7 +374,7 @@ class psng(simulation):
             wtx=sim2.goto(self)
             self.wtx=wtx
             random.setstate(saved)
-            xprint("%6.1f wtx=%6.1f" % (self.s.now,self.wtx),self.s.dbg)
+            xprint("%6.1f wtx=%6.1f\n" % (self.s.now,self.wtx),self.s.dbg)
 
     def board(self):
         self.t_board = self.s.now
@@ -379,7 +384,7 @@ class psng(simulation):
         self.s.hallCall_wt[self.arr, self.carrier.shaft.dir] = self.wt
         #### modification end
         self.carrier.board(self)
-        xprint("wt=%6.1f %6.1f %s" % (self.wt,self.s.now,self),self.s.dbg) # print to console when boarded
+        xprint("wt=%6.1f %6.1f %s\n" % (self.wt,self.s.now,self),self.s.dbg) # print to console when boarded
         if self.s.trn and self.state != 'boarded':
             self.rec.flush(wt)
         self.state = 'boarded'
@@ -391,7 +396,7 @@ class psng(simulation):
         self.wtc = wtc
         self.carrier.leave(self)
         self.state = 'finished'
-        xprint("%6.1f PSG %6.1f %6.1f" % (self.s.now,self.wt,st),self.s.wtp) # print to console when arrived to destination
+        print("%6.1f PSG %6.1f %6.1f" % (self.s.now,self.wt,st),self.s.wtp) # print to console when arrived to destination
         self.st = st
         self.s.wt = self.s.wt + self.wt
         self.s.wtc = self.s.wtc + self.wtc
@@ -399,6 +404,9 @@ class psng(simulation):
         self.s.nt = self.s.nt + 1
         self.s.psgs.append(self)
         xprint("ASD %6.1f %s" % (self.s.now,self),self.s.dbg)
+
+    def getPsgInfo(self):
+        return 'state:', self.state, 'id:', self.id, 'arr:', self.arr, 'dest:', self.dest, 't_arr:', self.t_arr, 'dir:', self.dir, 't_board:', self.t_board, 'car:', self.carrier.shaft.id, 't_leave:', self.t_leave
 
 class cage(simulation):
     """
@@ -458,8 +466,7 @@ class cage(simulation):
         self.calls[p.dest,self.shaft.dir] = 0
         self.s.carCall[p.dest, self.shaft.id] = p.wtc
 
-    def getPsgInfo(self,p):
-        return 'state:',p.state,'id:',p.id,'arr:',p.arr,'dest:',p.dest,'t_arr:',p.t_arr,'dir:',p.dir,'t_board:',p.t_board,'car:',self.id,'shaft:',self.shaft.id,'t_leave:',p.t_leave
+
         # if p.state == 'arrived':
         #     return p.state, p.id, p.arr, p.dest, p.t_arr
         # elif p.state == 'assigned':
@@ -485,8 +492,6 @@ class cage(simulation):
                 self.next('open',self.t_open)
             elif self.called() != -1:
                 # Passengers arrived somewhere else
-                for p in self.s.psgArr[self.pos]:
-                    print(self.getPsgInfo(p))
                 self.next('close',self.t_run)
             else:
                 # Nothing to do
@@ -505,21 +510,29 @@ class cage(simulation):
                 self.blocks_at = -1
             self.state = 'board'
             for p in self.boarded: # Disembark passengers for this floor.
+                if p.dest != self.pos:
+                    print('Boarded:',p)
                 # A passenger is leaving
-                if p.dest == self.pos:
-                    # print(self.getPsgInfo(p))
+                elif p.dest == self.pos:
+                    print('Before Leave:',p)
+                    # print(p.getPsgInfo())
                     p.leave()
-                    print(self.getPsgInfo(p))
+                    print('After Leave:',p)
+                    # print(p.getPsgInfo())
                     self.next('open',self.t_leave)
         elif self.state == 'board':
             self.next('close',self.t_close)
-            for p in self.s.bldg[self.pos]:
+            for p in self.s.bldg[self.pos]: # Only return current floor psng.
+                print('Building:',p)
                 # A passenger is boarding
                 if p.carrier == self and p.dir == self.shaft.dir: # if the floor of the passenger (that are assigned to this car) and car is the same and their direction is the same
                     if len(self.boarded) < self.cap: # if there are still capacity
-                        print(self.getPsgInfo(p))
+                        # print(p.getPsgInfo())
+                        print('Before Board:', p)
                         p.board()
-                        print(self.getPsgInfo(p))
+                        self.s.updateMatrixB(p)
+                        print('After Board:', p)
+                        # print(p.getPsgInfo())
                         self.next('board',self.t_board)
                     else:
                         self.s.leftover = self.s.leftover+1     #TODO: Perhaps better to restore this passenger back to the pool?
@@ -545,7 +558,7 @@ class cage(simulation):
                     self.pos -= 1           # Or there is no call and the elevator will stop.
                 self.trace()
                 self.next('run',self.t_run)
-        xprint("%6.1f %s" % (self.s.now,self),self.s.dbg)   # In case of any event produce debug data.
+        xprint("CAN Event %6.1f %s" % (self.s.now,self),self.s.dbg)   # In case of any event produce debug data.
 
 
     # def otherPos(self):
@@ -622,7 +635,7 @@ class cage(simulation):
         else:
             y = self.under
 
-        xprint("%6.1f %s unblocks %s for %d" % (self.s.now,self,y,x),self.s.dbg)
+        xprint("%6.1f %s unblocks %s for %d" % (self.s.now,self,y,x),self.s.dbg) #print self
         y.blocked_cage = self           #This cabin is the one which is blocked by the blocking cabin:y
         y.blocks_at = x                 # Misleading variable name. Blocking cabin destination.
         y.calls[x,self.shaft.dir] = 2   # Add the detination as the floor to move to, with type '2' (direct move.) TODO: Check meaning of '2'
