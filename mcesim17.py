@@ -232,10 +232,11 @@ class simulator:
 
     def updateMatrixB(self,p):
         for i in range(self.top):
-            if p in self.bldg[i]:
-                self.B[p.arr, p.dir] = p.wt
-            else:
-                self.B[i,:] = 0
+            for p in self.bldg[i]:
+                if p.state == 'boarded':
+                    self.B[p.arr, p.dir] = p.wt
+                elif p.state == 'finished':
+                    self.B[p.arr, p.dir] = p.wt
         return print(self.B)
 
 
@@ -517,11 +518,15 @@ class cage(simulation):
                     print('Before Leave:',p)
                     # print(p.getPsgInfo())
                     p.leave()
+                    self.s.updateMatrixB(p)
                     print('After Leave:',p)
                     # print(p.getPsgInfo())
                     self.next('open',self.t_leave)
         elif self.state == 'board':
             self.next('close',self.t_close)
+            # for i in range(self.s.top):
+            #     for p in self.s.bldg[i]:
+            #         print(p.arr)
             for p in self.s.bldg[self.pos]: # Only return current floor psng.
                 print('Building:',p)
                 # A passenger is boarding
