@@ -142,6 +142,8 @@ class simulator:
         self.hallCall = np.zeros((self.top, 2))
         self.hallCall_wt = np.zeros((self.top, 2))
         self.B = np.zeros((self.top,2))
+        self.allPsgs = [[] for i in range(self.top)]
+        self.waitingTime = 0
 
         if trnf:
             self.trnf = open(trnf,"w") # TODO "open" function to write to the file trnf *************************
@@ -232,11 +234,12 @@ class simulator:
 
     def updateMatrixB(self,p):
         for i in range(self.top):
-            for p in self.bldg[i]:
+            for p in self.allPsgs:
+                # print('func',p.arr, p.t_arr)
                 if p.state == 'boarded':
                     self.B[p.arr, p.dir] = p.wt
                 elif p.state == 'finished':
-                    self.B[p.arr, p.dir] = p.wt
+                    self.B[p.arr, p.dir] = 0
         return print(self.B)
 
 
@@ -333,6 +336,7 @@ class psng(simulation):
         self.state = 'arrived'
         self.t_board = 0
         self.t_leave = 0
+        self.s.allPsgs[self.arr].append(self)
 
     def __repr__(self):
         if self.carrier:
@@ -511,7 +515,9 @@ class cage(simulation):
                 self.blocks_at = -1
             self.state = 'board'
             for p in self.boarded: # Disembark passengers for this floor.
+                # print('DENEME',self.boarded)
                 if p.dest != self.pos:
+                    # self.s.updateMatrixB(p)
                     print('Boarded:',p)
                 # A passenger is leaving
                 elif p.dest == self.pos:
