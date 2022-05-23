@@ -141,9 +141,14 @@ class simulator:
         self.extended_hallCall = np.zeros((self.top, self.nshafts))
         self.hallCall = np.zeros((self.top, 2))
         self.hallCall_wt = np.zeros((self.top, 2))
-        self.B = np.zeros((self.top,2))
+        self.B = [[[] for j in range(2)]for i in range(self.top)]
+        self.PrimeB = np.zeros((self.top, 4))
+        # self.B = np.zeros((self.top, 2))
+        self.A = [[[] for j in range(4)]for i in range(self.top)]
+        self.PrimeA = np.zeros((self.top, 4))
         self.allPsgs = [[] for i in range(self.top)]
         self.waitingTime = 0
+        self.boardedAll = []
 
         if trnf:
             self.trnf = open(trnf,"w") # TODO "open" function to write to the file trnf *************************
@@ -234,13 +239,27 @@ class simulator:
 
     def updateMatrixB(self,p):
         for i in range(self.top):
-            for p in self.allPsgs:
-                # print('func',p.arr, p.t_arr)
-                if p.state == 'boarded':
-                    self.B[p.arr, p.dir] = p.wt
-                elif p.state == 'finished':
-                    self.B[p.arr, p.dir] = 0
-        return print(self.B)
+            for p in self.bldg[i]:
+                # print('func', i, p.arr, p.t_arr)
+                self.B[p.arr][p.dir].append(self.now-p.t_arr)
+        for i in range(self.top):
+            for j in range(2):
+                self.PrimeB[i,j] = max(self.B[i][j], default=0)
+                self.PrimeB[i, j+2] = sum(self.B[i][j])**2
+        # return self.PrimeB
+        return print(self.PrimeB)
+
+    def updateMatrixA(self,p,c):
+        for i in range(self.nshafts):
+            for p in self.shafts[i].cars[0].boarded:
+                # print('A Matrix:', p.carrier.shaft.id)
+                self.A[p.dest][p.carrier.shaft.id].append(self.now - p.t_board)
+                # print('AAp:',p.id) # test: print every passenger who has boarded
+        for i in range(self.top):
+            for j in range(4):
+                self.PrimeA[i, j] = sum(self.A[i][j])
+        return print(self.PrimeA)
+
 
 
 class clock(simulation):
@@ -311,6 +330,7 @@ class traffic(simulation):
                 to = int(self.count[i,2])
                 break
         p = psng(self.s,fr,to)
+        print('passenger generated:', p.id)
         c = self.s.algorithm(self.s,p)
         xprint("%6.1f %s" % (self.s.now,p),self.s.dbg)
         p.assign(c)                     # Assing passenger to carrier
@@ -334,9 +354,9 @@ class psng(simulation):
             self.dir = DN
         self.t_arr = self.s.now
         self.state = 'arrived'
-        self.t_board = 0
-        self.t_leave = 0
-        self.s.allPsgs[self.arr].append(self)
+        # self.t_board = 0
+        # self.t_leave = 0
+        # self.s.allPsgs[self.arr].append(self)
 
     def __repr__(self):
         if self.carrier:
@@ -352,6 +372,7 @@ class psng(simulation):
         self.s.hallCall[self.arr, self.carrier.shaft.dir] = 1
         #### modification end
         self.s.bldg[self.arr].append(self) # [ [], [], [psng1, psng2, ... (add passenger to current_floor)], ...,[]]
+        print('passenger assigned:', self.id)
         c.calls[self.arr,self.dir] = 1  # psng's arrived floor. It's different from other call matrices
         ''' [up down]
             [1  0   ]  arrived passenger 
@@ -461,13 +482,17 @@ class cage(simulation):
 
     def board(self,p): #board the passenger p
         self.boarded.append(p)
+        print(p.id,' boarding')
+        self.s.boardedAll.append(p)
         if p in self.s.bldg[p.arr]:
             self.s.bldg[p.arr].remove(p) # Remove passenger from waiting floor.
+            print(p.id,'removed from', p.arr)
         self.calls[p.dest,self.shaft.dir] = 1 # Add destination to the call list of this car.
         # self.calls_wt[p.arr,self.shaft.dir] = p.wt
 
     def leave(self,p): # deboard the passenger p
         self.boarded.remove(p)
+        self.s.boardedAll.remove(p)
         self.calls[p.dest,self.shaft.dir] = 0
         self.s.carCall[p.dest, self.shaft.id] = p.wtc
 
@@ -518,13 +543,20 @@ class cage(simulation):
                 # print('DENEME',self.boarded)
                 if p.dest != self.pos:
                     # self.s.updateMatrixB(p)
-                    print('Boarded:',p)
+                    print('On board:',p)
                 # A passenger is leaving
                 elif p.dest == self.pos:
                     print('Before Leave:',p)
                     # print(p.getPsgInfo())
                     p.leave()
                     self.s.updateMatrixB(p)
+                    for i in range(self.s.top):
+                        for j in range(2):
+                            self.s.B[i][j].clear()
+                    self.s.updateMatrixA(p, self)
+                    for i in range(self.s.top):
+                        for j in range(4):
+                            self.s.A[i][j].clear()
                     print('After Leave:',p)
                     # print(p.getPsgInfo())
                     self.next('open',self.t_leave)
@@ -536,12 +568,19 @@ class cage(simulation):
             for p in self.s.bldg[self.pos]: # Only return current floor psng.
                 print('Building:',p)
                 # A passenger is boarding
-                if p.carrier == self and p.dir == self.shaft.dir: # if the floor of the passenger (that are assigned to this car) and car is the same and their direction is the same
+                if p.carrier == self and p.dir == self.shaft.dir and p.state != 'boarded' and p.state != 'finished': # if the floor of the passenger (that are assigned to this car) and car is the same and their direction is the same
                     if len(self.boarded) < self.cap: # if there are still capacity
                         # print(p.getPsgInfo())
                         print('Before Board:', p)
                         p.board()
                         self.s.updateMatrixB(p)
+                        for i in range(self.s.top):
+                            for j in range(2):
+                                self.s.B[i][j].clear()
+                        self.s.updateMatrixA(p, self)
+                        for i in range(self.s.top):
+                            for j in range(4):
+                                self.s.A[i][j].clear()
                         print('After Board:', p)
                         # print(p.getPsgInfo())
                         self.next('board',self.t_board)
