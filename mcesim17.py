@@ -31,10 +31,10 @@ from setup import *
 
 # builtins.inputsize = 121
 # builtins.netsize = 20
-
-
+#
+#
 # (Xtrain1,Ytrain1) = load("trnx1.csv",inputsize)
-# pipeline1 = load_pipeline('mlp_weights.h5',"standardize.pickle")
+# pipeline1.pickle = load_pipeline('mlp_weights.h5',"standardize.pickle")
 
 def nn_assign(sim,s,p):
         # Cheesy call assignment
@@ -59,7 +59,7 @@ def nn_algorithm(simulation,p):
     return cmin
 
 
-dbg = False
+dbg = True
 trc = False
 wtp = True
 wts = True
@@ -137,18 +137,16 @@ class simulator:
         self.leftover = 0
         self.trn = None
         self.trnf = None
-        self.carCall = np.zeros((self.top, self.nshafts))
         self.extended_hallCall = np.zeros((self.top, self.nshafts))
-        self.hallCall = np.zeros((self.top, 2))
-        self.hallCall_wt = np.zeros((self.top, 2))
         self.B = [[[] for j in range(2)]for i in range(self.top)]
         self.PrimeB = np.zeros((self.top, 4))
-        # self.B = np.zeros((self.top, 2))
         self.A = [[[] for j in range(4)]for i in range(self.top)]
         self.PrimeA = np.zeros((self.top, 4))
-        self.allPsgs = [[] for i in range(self.top)]
-        self.waitingTime = 0
-        self.boardedAll = []
+        self.countHall = 0
+        self.countCar = 0
+        self.rt = 0
+        self.countB = 0
+        self.countA = 0
 
         if trnf:
             self.trnf = open(trnf,"w") # TODO "open" function to write to the file trnf *************************
@@ -186,27 +184,28 @@ class simulator:
         If previously scheduled events are removed (e.g. a time-out is
         re-scheduled to another time), they are not executed.
         """
-        t_next = self.end			# find nearest event time
-        for a in self.sys:
-            if a.timer < t_next:
-                t_next = a.timer
-        self.dt = t_next - self.now # time passed from next nearest event and now
-        self.now = t_next
-        if self.now >= self.end:	# is it before end time?
-            #print("Time over") #It is written in the terminal at the end of simulation
-            xprint("%6d %6.1f %6.1f %6.1f %6d" % (self.nn,self.wt/self.nt,self.st/self.nt,self.nt/self.nn,self.leftover),self.wts) # Final info.
-            if self.trn:
-                self.trnf.close()
-            if dmp:
-                self.gui.tk.update()
-            return
-        scan = True					# find all events at the same time
-        while scan:
-            scan = False
+        if self.countB <= 1000:
+            t_next = self.end			# find nearest event time
             for a in self.sys:
-                if a.timer == t_next:
-                    a.event()
-                    scan = True
+                if a.timer < t_next:
+                    t_next = a.timer
+            self.dt = t_next - self.now # time passed from next nearest event and now
+            self.now = t_next
+            if self.now >= self.end:	# is it before end time?
+                #print("Time over") #It is written in the terminal at the end of simulation
+                xprint("%6d %6.1f %6.1f %6.1f %6d" % (self.nn,self.wt/self.nt,self.st/self.nt,self.nt/self.nn,self.leftover),self.wts) # Final info.
+                if self.trn:
+                    self.trnf.close()
+                if dmp:
+                    self.gui.tk.update()
+                return
+            scan = True					# find all events at the same time
+            while scan:
+                scan = False
+                for a in self.sys:
+                    if a.timer == t_next:
+                        a.event()
+                        scan = True
 
     def run_again(self):
         self.run()
@@ -226,18 +225,22 @@ class simulator:
                     return px.wt
             self.run()
 
-    def calculate_extended_matrix(self):
+    def calculate_extended_matrix(self,c):
         for i in range(self.nshafts):
             if self.shafts[i].dir == UP:
-                self.extended_hallCall[:, i] = self.hallCall_wt[:, 0]
+                self.extended_hallCall[self.shafts[i].cars[0].pos:self.top, i] = self.PrimeB[self.shafts[i].cars[0].pos:self.top,2]
+                self.extended_hallCall[0:self.shafts[i].cars[0].pos, i] = 0
             elif self.shafts[i].dir == DN:
-                self.extended_hallCall[:, i] = self.hallCall_wt[:, 1]
+                self.extended_hallCall[0:self.shafts[i].cars[0].pos, i] = self.PrimeB[0:self.shafts[i].cars[0].pos,3]
+                self.extended_hallCall[self.shafts[i].cars[0].pos:self.top, i] = 0
             else:
                 print("TODO")
 
         return self.extended_hallCall
 
     def updateMatrixB(self,p):
+        self.countB += 1
+        print("countB: {}".format(self.countB))
         for i in range(self.top):
             for p in self.bldg[i]:
                 # print('func', i, p.arr, p.t_arr)
@@ -245,11 +248,13 @@ class simulator:
         for i in range(self.top):
             for j in range(2):
                 self.PrimeB[i,j] = max(self.B[i][j], default=0)
-                self.PrimeB[i, j+2] = sum(self.B[i][j])**2
-        # return self.PrimeB
-        return print(self.PrimeB)
+                self.PrimeB[i, j+2] = sum(self.B[i][j])
+        return self.PrimeB
+        # return print('PrimeB:', self.PrimeB)
 
     def updateMatrixA(self,p,c):
+        self.countA += 1
+        print("countA: {}".format(self.countA))
         for i in range(self.nshafts):
             for p in self.shafts[i].cars[0].boarded:
                 # print('A Matrix:', p.carrier.shaft.id)
@@ -258,7 +263,27 @@ class simulator:
         for i in range(self.top):
             for j in range(4):
                 self.PrimeA[i, j] = sum(self.A[i][j])
-        return print(self.PrimeA)
+        return self.PrimeA
+        # return print('PrimeA:', self.PrimeA)
+
+    def reward_function(self,p,c):
+        for i in range(self.top):
+            for p in self.bldg[i]:
+                if p.state == 'boarded':
+                    self.countHall = 1
+                else:
+                    self.countHall = 0
+                self.rt += (self.now-p.t_arr)
+        for i in range(self.nshafts):
+            for p in self.shafts[i].cars[0].boarded:
+                if p.state == 'finished':
+                    self.countCar = 1
+                else:
+                    self.countCar = 0
+                self.rt += (self.now - p.t_board)
+
+        return print('reward function:',self.rt)
+
 
 
 
@@ -353,10 +378,6 @@ class psng(simulation):
         else:
             self.dir = DN
         self.t_arr = self.s.now
-        self.state = 'arrived'
-        # self.t_board = 0
-        # self.t_leave = 0
-        # self.s.allPsgs[self.arr].append(self)
 
     def __repr__(self):
         if self.carrier:
@@ -368,11 +389,16 @@ class psng(simulation):
     def assign(self,c):
         self.s.nn = self.s.nn + 1       # ??
         self.carrier = c
-        #### modificiation
-        self.s.hallCall[self.arr, self.carrier.shaft.dir] = 1
-        #### modification end
         self.s.bldg[self.arr].append(self) # [ [], [], [psng1, psng2, ... (add passenger to current_floor)], ...,[]]
-        print('passenger assigned:', self.id)
+        self.s.updateMatrixB(self)
+        for i in range(self.s.top):
+            for j in range(2):
+                self.s.B[i][j].clear()
+        self.s.updateMatrixA(self, c)
+        for i in range(self.s.top):
+            for j in range(4):
+                self.s.A[i][j].clear()
+        # print('passenger assigned:', self.id)
         c.calls[self.arr,self.dir] = 1  # psng's arrived floor. It's different from other call matrices
         ''' [up down]
             [1  0   ]  arrived passenger 
@@ -395,8 +421,8 @@ class psng(simulation):
             saved=random.getstate()
             sim2=deepcopy(self.s)
             sim2.pre=False
-            #sim2.dbg=False
-            #random.seed(self.s.seed)
+            sim2.dbg=False
+            random.seed(self.s.seed)
             wtx=sim2.goto(self)
             self.wtx=wtx
             random.setstate(saved)
@@ -406,9 +432,6 @@ class psng(simulation):
         self.t_board = self.s.now
         wt = self.t_board - self.t_arr
         self.wt = wt
-        #### modification
-        self.s.hallCall_wt[self.arr, self.carrier.shaft.dir] = self.wt
-        #### modification end
         self.carrier.board(self)
         xprint("wt=%6.1f %6.1f %s\n" % (self.wt,self.s.now,self),self.s.dbg) # print to console when boarded
         if self.s.trn and self.state != 'boarded':
@@ -475,27 +498,22 @@ class cage(simulation):
     def __repr__(self): # Produce string representing car information.
         return f"cage(id:{self.id}, pos:{self.pos}, dir:{DIR[self.shaft.dir]}, st:{self.state}, shaftID:{self.shaft.id}, " \
                f"\ncallRequests:{self.calls}, " \
-               f"\nwth:{self.s.hallCall_wt}, " \
-               f"\nwtc:{self.s.carCall})," \
-               f"\nwtB:{self.s.calculate_extended_matrix()})"
-
+               f"\nPrimeB:{self.s.PrimeB}, " \
+               f"\nPrimeA:{self.s.PrimeA})"
+            # f"\nwtB:{self.s.calculate_extended_matrix(self)})"
 
     def board(self,p): #board the passenger p
         self.boarded.append(p)
-        print(p.id,' boarding')
-        self.s.boardedAll.append(p)
+        # print(p.id,' boarding')
         if p in self.s.bldg[p.arr]:
             self.s.bldg[p.arr].remove(p) # Remove passenger from waiting floor.
-            print(p.id,'removed from', p.arr)
+            # print(p.id,'removed from', p.arr)
         self.calls[p.dest,self.shaft.dir] = 1 # Add destination to the call list of this car.
         # self.calls_wt[p.arr,self.shaft.dir] = p.wt
 
     def leave(self,p): # deboard the passenger p
         self.boarded.remove(p)
-        self.s.boardedAll.remove(p)
         self.calls[p.dest,self.shaft.dir] = 0
-        self.s.carCall[p.dest, self.shaft.id] = p.wtc
-
 
         # if p.state == 'arrived':
         #     return p.state, p.id, p.arr, p.dest, p.t_arr
@@ -546,7 +564,7 @@ class cage(simulation):
                     print('On board:',p)
                 # A passenger is leaving
                 elif p.dest == self.pos:
-                    print('Before Leave:',p)
+                    # print('Before Leave:',p)
                     # print(p.getPsgInfo())
                     p.leave()
                     self.s.updateMatrixB(p)
@@ -557,14 +575,11 @@ class cage(simulation):
                     for i in range(self.s.top):
                         for j in range(4):
                             self.s.A[i][j].clear()
-                    print('After Leave:',p)
+                    # print('After Leave:',p)
                     # print(p.getPsgInfo())
                     self.next('open',self.t_leave)
         elif self.state == 'board':
             self.next('close',self.t_close)
-            # for i in range(self.s.top):
-            #     for p in self.s.bldg[i]:
-            #         print(p.arr)
             for p in self.s.bldg[self.pos]: # Only return current floor psng.
                 print('Building:',p)
                 # A passenger is boarding
@@ -581,6 +596,7 @@ class cage(simulation):
                         for i in range(self.s.top):
                             for j in range(4):
                                 self.s.A[i][j].clear()
+                        self.s.reward_function(p,self)
                         print('After Board:', p)
                         # print(p.getPsgInfo())
                         self.next('board',self.t_board)
@@ -831,6 +847,7 @@ if __name__ == "__main__":
         sim.gui.tk.mainloop()
     else:
         sim.go()
+
 
     if not anim and (dmp or trc):
         if outfile:
