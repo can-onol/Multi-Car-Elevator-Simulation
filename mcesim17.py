@@ -26,8 +26,9 @@ import sys
 from dataclasses import dataclass
 from copy import deepcopy
 from mcegui import *
-
+from control01 import *
 from setup import *
+from rl import *
 
 # builtins.inputsize = 121
 # builtins.netsize = 20
@@ -46,20 +47,12 @@ def nn_assign(sim,s,p):
         xprint("%6.1f assign (%d,%d) to %d" % (s.ncars,p.arr,p.dest,c.id),dbg)
         return c
 
-def nn_algorithm(simulation,p):
-    wmin = 9999999
-    cmin = 0
-    for s in simulation.shafts:
-        c = assign(simulation,s,p)
-        rec = record(simulation,s.id,c.id,p.arr,p.dir).dump()
-        w = pipeline1.predict(rec)
-        if w < wmin:
-            wmin = w
-            cmin = c
-    return cmin
+def nn_algorithm(nn_assign_simulator,p):
+    s = nn_assign_simulator.shafts[deneme(nn_assign_simulator.arrayA, nn_assign_simulator.arrayB, nn_assign_simulator.rt).get_action(network, num_actions)]
+    c = assign(nn_assign_simulator,s,p)
+    return c
 
-
-dbg = True
+dbg = False
 trc = False
 wtp = True
 wts = True
@@ -140,14 +133,17 @@ class simulator:
         self.extended_hallCall = np.zeros((self.top, self.nshafts))
         self.B = [[[] for j in range(2)]for i in range(self.top)]
         self.PrimeB = np.zeros((self.top, 4))
+        self.arrayB = np.zeros((self.top * self.nshafts))
         self.A = [[[] for j in range(4)]for i in range(self.top)]
         self.PrimeA = np.zeros((self.top, 4))
+        self.arrayA = np.zeros((self.top * self.nshafts))
         self.countHall = 0
         self.countCar = 0
         self.rt = 0
         self.countB = 0
         self.countA = 0
-
+        self.file_can = open("print_file", "a")
+        self.file_matrices = open("print_matrices_nn.txt", "a")
         if trnf:
             self.trnf = open(trnf,"w") # TODO "open" function to write to the file trnf *************************
             self.trn = True
@@ -184,28 +180,36 @@ class simulator:
         If previously scheduled events are removed (e.g. a time-out is
         re-scheduled to another time), they are not executed.
         """
-        if self.countB <= 1000:
-            t_next = self.end			# find nearest event time
+        # if self.countB <= 1000:
+        t_next = self.end			# find nearest event time
+        for a in self.sys:
+            if a.timer < t_next:
+                t_next = a.timer
+        self.dt = t_next - self.now # time passed from next nearest event and now
+        self.now = t_next
+        if self.now >= self.end:	# is it before end time?
+            #print("Time over") #It is written in the terminal at the end of simulation
+            xprint("%6d %6.1f %6.1f %6.1f %6d" % (self.nn,self.wt/self.nt,self.st/self.nt,self.nt/self.nn,self.leftover),self.wts) # Final info.
+            # print('nn:', self.nn, 'nt:', self.nt)
+            self.file_can.close()
+            self.file_matrices.close()
+            if self.trn:
+                self.trnf.close()
+            if dmp:
+                self.gui.tk.update()
+            return
+        scan = True					# find all events at the same time
+        while scan:
+            scan = False
             for a in self.sys:
-                if a.timer < t_next:
-                    t_next = a.timer
-            self.dt = t_next - self.now # time passed from next nearest event and now
-            self.now = t_next
-            if self.now >= self.end:	# is it before end time?
-                #print("Time over") #It is written in the terminal at the end of simulation
-                xprint("%6d %6.1f %6.1f %6.1f %6d" % (self.nn,self.wt/self.nt,self.st/self.nt,self.nt/self.nn,self.leftover),self.wts) # Final info.
-                if self.trn:
-                    self.trnf.close()
-                if dmp:
-                    self.gui.tk.update()
-                return
-            scan = True					# find all events at the same time
-            while scan:
-                scan = False
-                for a in self.sys:
-                    if a.timer == t_next:
-                        a.event()
-                        scan = True
+                # if self.countB >= 1000:
+                #     cano = deneme(self.arrayA, self.arrayB, self.rt).concatenated_vector()
+                #     self.countA = 0
+                #     self.countB = 0
+                if a.timer == t_next:
+                    a.event()
+                    scan = True
+
 
     def run_again(self):
         self.run()
@@ -234,13 +238,13 @@ class simulator:
                 self.extended_hallCall[0:self.shafts[i].cars[0].pos, i] = self.PrimeB[0:self.shafts[i].cars[0].pos,3]
                 self.extended_hallCall[self.shafts[i].cars[0].pos:self.top, i] = 0
             else:
-                print("TODO")
+                self.file_can.write("TODO")
 
         return self.extended_hallCall
 
     def updateMatrixB(self,p):
         self.countB += 1
-        print("countB: {}".format(self.countB))
+        # print("countB: {}".format(self.countB))
         for i in range(self.top):
             for p in self.bldg[i]:
                 # print('func', i, p.arr, p.t_arr)
@@ -249,12 +253,15 @@ class simulator:
             for j in range(2):
                 self.PrimeB[i,j] = max(self.B[i][j], default=0)
                 self.PrimeB[i, j+2] = sum(self.B[i][j])
+        self.arrayB = np.asarray(self.PrimeB).reshape(-1)
+        self.file_matrices.write('B:\n')
+        self.file_matrices.write(str(self.arrayB))
         return self.PrimeB
         # return print('PrimeB:', self.PrimeB)
 
     def updateMatrixA(self,p,c):
         self.countA += 1
-        print("countA: {}".format(self.countA))
+        # print("countA: {}".format(self.countA))
         for i in range(self.nshafts):
             for p in self.shafts[i].cars[0].boarded:
                 # print('A Matrix:', p.carrier.shaft.id)
@@ -263,8 +270,10 @@ class simulator:
         for i in range(self.top):
             for j in range(4):
                 self.PrimeA[i, j] = sum(self.A[i][j])
+        self.arrayA = np.asarray(self.PrimeA).reshape(-1)
+        self.file_matrices.write('A:\n')
+        self.file_matrices.write(str(self.arrayA))
         return self.PrimeA
-        # return print('PrimeA:', self.PrimeA)
 
     def reward_function(self,p,c):
         for i in range(self.top):
@@ -281,8 +290,9 @@ class simulator:
                 else:
                     self.countCar = 0
                 self.rt += (self.now - p.t_board)
-
-        return print('reward function:',self.rt)
+        self.file_can.write('reward function:\n')
+        self.file_can.write(str(self.rt))
+        return self.rt
 
 
 
@@ -355,7 +365,8 @@ class traffic(simulation):
                 to = int(self.count[i,2])
                 break
         p = psng(self.s,fr,to)
-        print('passenger generated:', p.id)
+        self.s.file_can.write('passenger generated:\n')
+        self.s.file_can.write(str(p.id))
         c = self.s.algorithm(self.s,p)
         xprint("%6.1f %s" % (self.s.now,p),self.s.dbg)
         p.assign(c)                     # Assing passenger to carrier
@@ -457,6 +468,8 @@ class psng(simulation):
     def getPsgInfo(self):
         return 'state:', self.state, 'id:', self.id, 'arr:', self.arr, 'dest:', self.dest, 't_arr:', self.t_arr, 'dir:', self.dir, 't_board:', self.t_board, 'car:', self.carrier.shaft.id, 't_leave:', self.t_leave
 
+
+@dataclass
 class cage(simulation):
     """
     Multi-car elevator cage
@@ -561,7 +574,8 @@ class cage(simulation):
                 # print('DENEME',self.boarded)
                 if p.dest != self.pos:
                     # self.s.updateMatrixB(p)
-                    print('On board:',p)
+                    self.s.file_can.write('On board:\n')
+                    self.s.file_can.write(str(p.id))
                 # A passenger is leaving
                 elif p.dest == self.pos:
                     # print('Before Leave:',p)
@@ -581,12 +595,14 @@ class cage(simulation):
         elif self.state == 'board':
             self.next('close',self.t_close)
             for p in self.s.bldg[self.pos]: # Only return current floor psng.
-                print('Building:',p)
+                self.s.file_can.write('Building:\n')
+                self.s.file_can.write(str(p.id))
                 # A passenger is boarding
                 if p.carrier == self and p.dir == self.shaft.dir and p.state != 'boarded' and p.state != 'finished': # if the floor of the passenger (that are assigned to this car) and car is the same and their direction is the same
                     if len(self.boarded) < self.cap: # if there are still capacity
                         # print(p.getPsgInfo())
-                        print('Before Board:', p)
+                        self.s.file_can.write('Before Board:\n')
+                        self.s.file_can.write(str(p.id))
                         p.board()
                         self.s.updateMatrixB(p)
                         for i in range(self.s.top):
@@ -597,7 +613,8 @@ class cage(simulation):
                             for j in range(4):
                                 self.s.A[i][j].clear()
                         self.s.reward_function(p,self)
-                        print('After Board:', p)
+                        self.s.file_can.write('After Board:\n')
+                        self.s.file_can.write(str(p.id))
                         # print(p.getPsgInfo())
                         self.next('board',self.t_board)
                     else:
@@ -625,11 +642,6 @@ class cage(simulation):
                 self.trace()
                 self.next('run',self.t_run)
         xprint("CAN Event %6.1f %s" % (self.s.now,self),self.s.dbg)   # In case of any event produce debug data.
-
-
-    # def otherPos(self):
-    #     if self.shaft.dir == UP and self.over != None:
-    #         print('upper car position:', self.over.pos)
 
 
     def here(self):
@@ -832,25 +844,30 @@ if __name__ == "__main__":
 
     exec("from "+rec+" import record")
     seed=1
-    sim = simulator(top,nshaft,ncar,seed,end,dbg,trc,wtp,wts,dmp,sta,pre,dly,cap,trnf)
-    sim.algorithm = algorithm
-    t1=traffic(sim,rate)
-    cl=clock(sim,1)
+    for _ in range(1):
+        seed += 1
+        sim = simulator(top,nshaft,ncar,seed,end,dbg,trc,wtp,wts,dmp,sta,pre,dly,cap,trnf)
+        sim.algorithm = algorithm
+        t1=traffic(sim,rate)
+        cl=clock(sim,1)
+        print('\n\n\n\n\n\n\n\nASLAN-----------\n\n\n\n\n\n\n')
+
     #if dmp:
     #    simulator.run(end=end)
     #else:
     #    while simulator.now < end:
     #       simulator.run()
-    if anim:
-        sim.gui.frame()
-        sim.run_again()
-        sim.gui.tk.mainloop()
-    else:
-        sim.go()
-
+        if anim:
+            sim.gui.frame()
+            sim.run_again()
+            sim.gui.tk.mainloop()
+        else:
+            sim.go()
 
     if not anim and (dmp or trc):
         if outfile:
             sim.gui.cv.postscript(file=outfile, colormode='color')
         sim.gui.tk.mainloop()
+
+
 
