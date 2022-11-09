@@ -9,7 +9,11 @@ num_actions = 4
 GAMMA = 0.95
 
 network = keras.Sequential([
-    keras.layers.Dense(30, activation='relu', kernel_initializer=keras.initializers.he_normal()),
+    # keras.layers.Dense(30, activation='relu', kernel_initializer=keras.initializers.he_normal()),
+    keras.layers.Conv1D(64, kernel_size=3, activation='relu', kernel_initializer=keras.initializers.he_normal()),
+    keras.layers.Conv1D(64, kernel_size=3, activation='relu', kernel_initializer=keras.initializers.he_normal()),
+    keras.layers.MaxPool1D((20)),
+    keras.layers.Flatten(),
     keras.layers.Dense(30, activation='relu', kernel_initializer=keras.initializers.he_normal()),
     keras.layers.Dense(num_actions, activation='softmax')
 ])
@@ -25,25 +29,31 @@ class deneme:
         self.input_vector = np.concatenate([self.B, self.A])
 
     def get_action(self, network, num_actions):
-        softmax_out = network(self.input_vector.reshape((1, -1)))
-        s = np.random.choice(num_actions, p=softmax_out.numpy()[0])
-        return s
+        softmax_out = network(self.input_vector.reshape((1, -1, 1)))
+        # print('input Shape:', self.input_vector.reshape((1, -1, 1)).shape)
+        self.act = np.random.choice(num_actions, p=softmax_out.numpy()[0])
+        return self.act
 
-    # def update_network(network, rewards, states, actions, num_actions):
-    #     reward_sum = 0
-    #     discounted_rewards = []
-    #     for reward in rewards[::-1]:  # reverse buffer r
-    #         reward_sum = reward + GAMMA * reward_sum
-    #         discounted_rewards.append(reward_sum)
-    #     discounted_rewards.reverse()
-    #     discounted_rewards = np.array(discounted_rewards)
-    #     # standardise the rewards
-    #     discounted_rewards -= np.mean(discounted_rewards)
-    #     discounted_rewards /= np.std(discounted_rewards)
-    #     states = np.vstack(states)
-    #     loss = network.train_on_batch(states, discounted_rewards)
-    #     return loss
-    #
+    def update_network(self, network, rewards, states, actions, num_actions):
+        reward_sum = 0
+        discounted_rewards = []
+        for reward in rewards[::-1]:  # reverse buffer r
+            reward_sum = reward + GAMMA * reward_sum
+            discounted_rewards.append(reward_sum)
+        discounted_rewards.reverse()
+        discounted_rewards = np.array(discounted_rewards)
+        # standardise the rewards
+        discounted_rewards -= np.mean(discounted_rewards)
+        discounted_rewards /= np.std(discounted_rewards)
+        states = np.vstack(states)
+        states = states.reshape(-1, 160, 1)
+        # print('states shape:', states.shape)
+        # loss = network.train_on_batch(states, discounted_rewards)
+        target_actions = np.array([[1 if a == i else 0 for i in range(4)] for a in actions])
+        loss = network.train_on_batch(states, target_actions, sample_weight=discounted_rewards)
+        # print(network.summary())
+        return loss
+
     # num_episodes = 10000000
     #
     # for episode in range(num_episodes):
@@ -58,7 +68,7 @@ class deneme:
     #         actions.append(action)
     #
     #         if done:
-    #             loss = update_network(network, rewards, states)
+    #             loss = update_network(network, rewards, states, actions, num_actions)
     #             tot_reward = sum(rewards)
     #             print(f"Episode: {episode}, Reward: {tot_reward}, avg loss: {loss:.5f}")
     #             break

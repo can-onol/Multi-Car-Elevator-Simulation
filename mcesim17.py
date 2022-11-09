@@ -48,7 +48,8 @@ def nn_assign(sim,s,p):
         return c
 
 def nn_algorithm(nn_assign_simulator,p):
-    s = nn_assign_simulator.shafts[deneme(nn_assign_simulator.arrayA, nn_assign_simulator.arrayB, nn_assign_simulator.rt).get_action(network, num_actions)]
+    nn_assign_simulator.action = deneme(nn_assign_simulator.arrayA, nn_assign_simulator.arrayB, nn_assign_simulator.rt).get_action(network, num_actions)
+    s = nn_assign_simulator.shafts[nn_assign_simulator.action]
     c = assign(nn_assign_simulator,s,p)
     return c
 
@@ -142,6 +143,11 @@ class simulator:
         self.rt = 0
         self.countB = 0
         self.countA = 0
+        self.countRT = 0
+        self.action = -1
+        self.states = []
+        self.actions = []
+        self.rewards = []
         self.file_can = open("print_file", "a")
         self.file_matrices = open("print_matrices_nn.txt", "a")
         if trnf:
@@ -202,11 +208,20 @@ class simulator:
         while scan:
             scan = False
             for a in self.sys:
-                # if self.countB >= 1000:
-                #     cano = deneme(self.arrayA, self.arrayB, self.rt).concatenated_vector()
-                #     self.countA = 0
-                #     self.countB = 0
-                if a.timer == t_next:
+                if self.countB >= 1000:
+                    loss = deneme(self.arrayA, self.arrayB, self.rt).update_network(network, self.rewards, self.states, self.actions, num_actions)
+                    tot_reward = sum(self.rewards)
+                    print(f"Reward: {tot_reward}, avg loss: {loss:.5f}")
+                    # cano = deneme(self.arrayA, self.arrayB, self.rt).concatenated_vector()
+                    print("Actions", self.actions,'\n',
+                          'Rewards:', self.rewards)
+                    self.countA = 0
+                    self.countB = 0
+                    self.countRT = 0
+                    self.states.clear()
+                    self.actions.clear()
+                    self.rewards.clear()
+                elif a.timer == t_next:
                     a.event()
                     scan = True
 
@@ -275,26 +290,32 @@ class simulator:
         self.file_matrices.write(str(self.arrayA))
         return self.PrimeA
 
+    def training_input(self, B, A, action, rew):
+        self.input_state = np.concatenate([B, A])
+        self.states.append(self.input_state)
+        self.actions.append(action)
+        self.rewards.append(rew)
+
     def reward_function(self,p,c):
+        self.rt = 0
+        self.countRT += 1
         for i in range(self.top):
             for p in self.bldg[i]:
                 if p.state == 'boarded':
                     self.countHall = 1
                 else:
                     self.countHall = 0
-                self.rt += (self.now-p.t_arr)
+                self.rt -= (self.now-p.t_arr)
         for i in range(self.nshafts):
             for p in self.shafts[i].cars[0].boarded:
                 if p.state == 'finished':
                     self.countCar = 1
                 else:
                     self.countCar = 0
-                self.rt += (self.now - p.t_board)
+                self.rt -= (self.now - p.t_board)
         self.file_can.write('reward function:\n')
         self.file_can.write(str(self.rt))
         return self.rt
-
-
 
 
 class clock(simulation):
@@ -409,6 +430,8 @@ class psng(simulation):
         for i in range(self.s.top):
             for j in range(4):
                 self.s.A[i][j].clear()
+        self.s.reward_function(self, c)
+        self.s.training_input(self.s.arrayB, self.s.arrayA, self.s.action, self.s.rt)
         # print('passenger assigned:', self.id)
         c.calls[self.arr,self.dir] = 1  # psng's arrived floor. It's different from other call matrices
         ''' [up down]
@@ -456,7 +479,7 @@ class psng(simulation):
         self.wtc = wtc
         self.carrier.leave(self)
         self.state = 'finished'
-        print("%6.1f PSG %6.1f %6.1f" % (self.s.now,self.wt,st),self.s.wtp) # print to console when arrived to destination
+        # print("%6.1f PSG %6.1f %6.1f" % (self.s.now,self.wt,st),self.s.wtp) # print to console when arrived to destination
         self.st = st
         self.s.wt = self.s.wt + self.wt
         self.s.wtc = self.s.wtc + self.wtc
@@ -589,6 +612,8 @@ class cage(simulation):
                     for i in range(self.s.top):
                         for j in range(4):
                             self.s.A[i][j].clear()
+                    self.s.reward_function(p, self)
+                    self.s.training_input(self.s.arrayB, self.s.arrayA, self.s.action, self.s.rt)
                     # print('After Leave:',p)
                     # print(p.getPsgInfo())
                     self.next('open',self.t_leave)
@@ -613,6 +638,7 @@ class cage(simulation):
                             for j in range(4):
                                 self.s.A[i][j].clear()
                         self.s.reward_function(p,self)
+                        self.s.training_input(self.s.arrayB, self.s.arrayA, self.s.action, self.s.rt)
                         self.s.file_can.write('After Board:\n')
                         self.s.file_can.write(str(p.id))
                         # print(p.getPsgInfo())
