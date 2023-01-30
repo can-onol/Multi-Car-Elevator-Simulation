@@ -208,13 +208,18 @@ class simulator:
         while scan:
             scan = False
             for a in self.sys:
-                if self.countB >= 1000:
+                if self.countB >= 500:
                     loss = deneme(self.arrayA, self.arrayB, self.rt).update_network(network, self.rewards, self.states, self.actions, num_actions)
                     tot_reward = sum(self.rewards)
                     print(f"Reward: {tot_reward}, avg loss: {loss:.5f}")
                     # cano = deneme(self.arrayA, self.arrayB, self.rt).concatenated_vector()
-                    print("Actions", self.actions,'\n',
-                          'Rewards:', self.rewards)
+                    print("Actions", self.actions)
+                    # self.file_matrices.write('\nstates:\n')
+                    # self.file_matrices.write(str(self.states))
+                    self.file_matrices.write('\nactions:\n')
+                    self.file_matrices.write(str(self.actions))
+                    self.file_matrices.write('\nreward:\n')
+                    self.file_matrices.write(str(self.rewards))
                     self.countA = 0
                     self.countB = 0
                     self.countRT = 0
@@ -245,6 +250,14 @@ class simulator:
             self.run()
 
     def calculate_extended_matrix(self,c):
+        '''
+        Extended Call Matrix for Hall Call just like the Article
+        [2, 0, 2, 2]
+        [1, 0, 1, 1]
+        ...
+        [5, 3, 5, 5]
+        [0, 0, 0, 0]
+        '''
         for i in range(self.nshafts):
             if self.shafts[i].dir == UP:
                 self.extended_hallCall[self.shafts[i].cars[0].pos:self.top, i] = self.PrimeB[self.shafts[i].cars[0].pos:self.top,2]
@@ -254,6 +267,9 @@ class simulator:
                 self.extended_hallCall[self.shafts[i].cars[0].pos:self.top, i] = 0
             else:
                 self.file_can.write("TODO")
+        self.arrayB = np.asarray(self.extended_hallCall).reshape(-1)
+        self.file_matrices.write('\nB:\n')
+        self.file_matrices.write(str(self.arrayB.reshape(-1,4)))
 
         return self.extended_hallCall
 
@@ -268,9 +284,6 @@ class simulator:
             for j in range(2):
                 self.PrimeB[i,j] = max(self.B[i][j], default=0)
                 self.PrimeB[i, j+2] = sum(self.B[i][j])
-        self.arrayB = np.asarray(self.PrimeB).reshape(-1)
-        self.file_matrices.write('B:\n')
-        self.file_matrices.write(str(self.arrayB))
         return self.PrimeB
         # return print('PrimeB:', self.PrimeB)
 
@@ -286,8 +299,8 @@ class simulator:
             for j in range(4):
                 self.PrimeA[i, j] = sum(self.A[i][j])
         self.arrayA = np.asarray(self.PrimeA).reshape(-1)
-        self.file_matrices.write('A:\n')
-        self.file_matrices.write(str(self.arrayA))
+        self.file_matrices.write('\nA:\n')
+        self.file_matrices.write(str(self.arrayA.reshape(-1,4)))
         return self.PrimeA
 
     def training_input(self, B, A, action, rew):
@@ -313,8 +326,8 @@ class simulator:
                 else:
                     self.countCar = 0
                 self.rt -= (self.now - p.t_board)
-        self.file_can.write('reward function:\n')
-        self.file_can.write(str(self.rt))
+        # self.file_can.write('\nreward function:\n')
+        # self.file_can.write(str(self.rt))
         return self.rt
 
 
@@ -430,6 +443,7 @@ class psng(simulation):
         for i in range(self.s.top):
             for j in range(4):
                 self.s.A[i][j].clear()
+        self.s.calculate_extended_matrix(c)
         self.s.reward_function(self, c)
         self.s.training_input(self.s.arrayB, self.s.arrayA, self.s.action, self.s.rt)
         # print('passenger assigned:', self.id)
@@ -612,6 +626,7 @@ class cage(simulation):
                     for i in range(self.s.top):
                         for j in range(4):
                             self.s.A[i][j].clear()
+                    self.s.calculate_extended_matrix(self)
                     self.s.reward_function(p, self)
                     self.s.training_input(self.s.arrayB, self.s.arrayA, self.s.action, self.s.rt)
                     # print('After Leave:',p)
@@ -637,6 +652,7 @@ class cage(simulation):
                         for i in range(self.s.top):
                             for j in range(4):
                                 self.s.A[i][j].clear()
+                        self.s.calculate_extended_matrix(self)
                         self.s.reward_function(p,self)
                         self.s.training_input(self.s.arrayB, self.s.arrayA, self.s.action, self.s.rt)
                         self.s.file_can.write('After Board:\n')
@@ -870,7 +886,19 @@ if __name__ == "__main__":
 
     exec("from "+rec+" import record")
     seed=1
-    for _ in range(1):
+
+    network = keras.Sequential([
+        keras.layers.Dense(30, activation='relu', kernel_initializer=keras.initializers.he_normal()),
+        # keras.layers.Conv1D(64, kernel_size=3, activation='relu', kernel_initializer=keras.initializers.he_normal()),
+        # keras.layers.Conv1D(64, kernel_size=3, activation='relu', kernel_initializer=keras.initializers.he_normal()),
+        # keras.layers.MaxPool1D((20)),
+        # keras.layers.Flatten(),
+        keras.layers.Dense(30, activation='relu', kernel_initializer=keras.initializers.he_normal()),
+        keras.layers.Dense(num_actions, activation='softmax')
+    ])
+    network.compile(loss='categorical_crossentropy', optimizer=keras.optimizers.Adam())
+
+    for _ in range(3):
         seed += 1
         sim = simulator(top,nshaft,ncar,seed,end,dbg,trc,wtp,wts,dmp,sta,pre,dly,cap,trnf)
         sim.algorithm = algorithm

@@ -8,16 +8,16 @@ state_size = 160
 num_actions = 4
 GAMMA = 0.95
 
-network = keras.Sequential([
-    # keras.layers.Dense(30, activation='relu', kernel_initializer=keras.initializers.he_normal()),
-    keras.layers.Conv1D(64, kernel_size=3, activation='relu', kernel_initializer=keras.initializers.he_normal()),
-    keras.layers.Conv1D(64, kernel_size=3, activation='relu', kernel_initializer=keras.initializers.he_normal()),
-    keras.layers.MaxPool1D((20)),
-    keras.layers.Flatten(),
-    keras.layers.Dense(30, activation='relu', kernel_initializer=keras.initializers.he_normal()),
-    keras.layers.Dense(num_actions, activation='softmax')
-])
-network.compile(loss='categorical_crossentropy',optimizer=keras.optimizers.Adam())
+# network = keras.Sequential([
+#     # keras.layers.Dense(30, activation='relu', kernel_initializer=keras.initializers.he_normal()),
+#     keras.layers.Conv1D(64, kernel_size=3, activation='relu', kernel_initializer=keras.initializers.he_normal()),
+#     keras.layers.Conv1D(64, kernel_size=3, activation='relu', kernel_initializer=keras.initializers.he_normal()),
+#     keras.layers.MaxPool1D((20)),
+#     keras.layers.Flatten(),
+#     keras.layers.Dense(30, activation='relu', kernel_initializer=keras.initializers.he_normal()),
+#     keras.layers.Dense(num_actions, activation='softmax')
+# ])
+# network.compile(loss='categorical_crossentropy',optimizer=keras.optimizers.Adam())
 
 
 @dataclass
@@ -29,8 +29,14 @@ class deneme:
         self.input_vector = np.concatenate([self.B, self.A])
 
     def get_action(self, network, num_actions):
-        softmax_out = network(self.input_vector.reshape((1, -1, 1)))
+        # #  For CNN
+        # softmax_out = network(self.input_vector.reshape((1, -1, 1)))
+
+        # For Dense Layer
+        softmax_out = network(self.input_vector.reshape((1, -1)))
+
         # print('input Shape:', self.input_vector.reshape((1, -1, 1)).shape)
+        print(network.layers[0].weights[0][2])
         self.act = np.random.choice(num_actions, p=softmax_out.numpy()[0])
         return self.act
 
@@ -46,11 +52,14 @@ class deneme:
         discounted_rewards -= np.mean(discounted_rewards)
         discounted_rewards /= np.std(discounted_rewards)
         states = np.vstack(states)
-        states = states.reshape(-1, 160, 1)
+        # print("states shape", states.shape,"\n")
+
+        # # For CNN Layer
+        # states = states.reshape(-1, 160, 1)
         # print('states shape:', states.shape)
         # loss = network.train_on_batch(states, discounted_rewards)
-        target_actions = np.array([[1 if a == i else 0 for i in range(4)] for a in actions])
-        loss = network.train_on_batch(states, target_actions, sample_weight=discounted_rewards)
+        onehot_actions = np.array([[1 if a == i else 0 for i in range(4)] for a in actions])
+        loss = network.train_on_batch(states, onehot_actions, sample_weight=discounted_rewards)
         # print(network.summary())
         return loss
 
