@@ -132,12 +132,16 @@ class simulator:
         self.trn = None
         self.trnf = None
         self.extended_hallCall = np.zeros((self.top, self.nshafts))
+
+        # B Matrices
         self.B = [[[] for j in range(2)]for i in range(self.top)]
         self.PrimeB = np.zeros((self.top, 4))
         self.arrayB = np.zeros((self.top * self.nshafts))
+        # A Marices
         self.A = [[[] for j in range(4)]for i in range(self.top)]
         self.PrimeA = np.zeros((self.top, 4))
         self.arrayA = np.zeros((self.top * self.nshafts))
+
         self.countHall = 0
         self.countCar = 0
         self.rt = 0
@@ -208,7 +212,7 @@ class simulator:
         while scan:
             scan = False
             for a in self.sys:
-                if self.countB >= 500:
+                if self.countB >= 500 and self.countA >= 500:
                     loss = deneme(self.arrayA, self.arrayB, self.rt).update_network(network, self.rewards, self.states, self.actions, num_actions)
                     tot_reward = sum(self.rewards)
                     print(f"Reward: {tot_reward}, avg loss: {loss:.5f}")
@@ -275,7 +279,7 @@ class simulator:
 
     def updateMatrixB(self,p):
         self.countB += 1
-        # print("countB: {}".format(self.countB))
+        print("countB: {}".format(self.countB))
         for i in range(self.top):
             for p in self.bldg[i]:
                 # print('func', i, p.arr, p.t_arr)
@@ -284,12 +288,13 @@ class simulator:
             for j in range(2):
                 self.PrimeB[i,j] = max(self.B[i][j], default=0)
                 self.PrimeB[i, j+2] = sum(self.B[i][j])
+        # print(self.B)
         return self.PrimeB
         # return print('PrimeB:', self.PrimeB)
 
     def updateMatrixA(self,p,c):
         self.countA += 1
-        # print("countA: {}".format(self.countA))
+        print("countA: {}".format(self.countA))
         for i in range(self.nshafts):
             for p in self.shafts[i].cars[0].boarded:
                 # print('A Matrix:', p.carrier.shaft.id)
@@ -554,6 +559,7 @@ class cage(simulation):
 
     def board(self,p): #board the passenger p
         self.boarded.append(p)
+        print('Boarded:', self.boarded)
         # print(p.id,' boarding')
         if p in self.s.bldg[p.arr]:
             self.s.bldg[p.arr].remove(p) # Remove passenger from waiting floor.
@@ -845,13 +851,13 @@ if __name__ == "__main__":
     parser.add_argument('--dmp', action='store_true',default=dmp)
     parser.add_argument('--sta', action='store_true',default=sta)
     parser.add_argument('--pre', action='store_true',default=pre)
-    parser.add_argument('--end', action='store', default=1800)
-    parser.add_argument('--rate', action='store', default=0.02)
+    parser.add_argument('--end', action='store', default=500)
+    parser.add_argument('--rate', action='store', default=0.8)
     parser.add_argument('--top', action='store', default=20)
-    parser.add_argument('--nshaft', action='store', default=2)
-    parser.add_argument('--ncar', action='store', default=3)
+    parser.add_argument('--nshaft', action='store', default=4)
+    parser.add_argument('--ncar', action='store', default=1)
     parser.add_argument('--out', action='store',default=None)
-    parser.add_argument('--alg', action='store', default="simple")
+    parser.add_argument('--alg', action='store', default="nn")
     parser.add_argument('--rec', action='store', default="rec0")
     parser.add_argument('--anim', action='store_true', default=anim)
     parser.add_argument('--dly', action='store', default=1)
@@ -898,7 +904,7 @@ if __name__ == "__main__":
     ])
     network.compile(loss='categorical_crossentropy', optimizer=keras.optimizers.Adam())
 
-    for _ in range(3):
+    for _ in range(1):
         seed += 1
         sim = simulator(top,nshaft,ncar,seed,end,dbg,trc,wtp,wts,dmp,sta,pre,dly,cap,trnf)
         sim.algorithm = algorithm

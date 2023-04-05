@@ -1,8 +1,8 @@
 from mcesim17 import *
 import numpy as np
-import tensorflow as tf
+# import tensorflow as tf
 from tensorflow import keras
-from matplotlib import pyplot
+# from matplotlib import pyplot
 
 state_size = 160
 num_actions = 4
@@ -36,7 +36,7 @@ class deneme:
         softmax_out = network(self.input_vector.reshape((1, -1)))
 
         # print('input Shape:', self.input_vector.reshape((1, -1, 1)).shape)
-        print(network.layers[0].weights[0][2])
+        # print(network.layers[0].weights[0][2])
         self.act = np.random.choice(num_actions, p=softmax_out.numpy()[0])
         return self.act
 
